@@ -1,0 +1,50 @@
+on:
+  workflow_call:
+    inputs:
+      image_ref:
+        required: true
+        type: string
+env:
+  KMS_KEY: "gcpkms://projects/jetstack-rob-best/locations/europe-west1/keyRings/rob-best/cryptoKeys/cosign/versions/1"
+  GCP_WORKLOAD_IDENTITY_PROVIDER: 'projects/998629990322/locations/global/workloadIdentityPools/ribbybibby/providers/testy'
+  GCP_SERVICE_ACCOUNT: 'cosigner@jetstack-rob-best.iam.gserviceaccount.com'
+
+jobs:
+  generate-provenance:
+    name: Generate provenance for image
+    runs-on: ubuntu-20.04
+    permissions:
+      id-token: write
+    steps:
+      # Install cosign
+      - name: Install cosign
+        uses: sigstore/cosign-installer@main
+        with:
+          cosign-release: v1.4.1
+
+      - name: Get Syft
+        uses: anchore/sbom-action/download-syft@v0.6.0
+
+      - uses: google-github-actions/auth@v0.4.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+
+      - name: Docker Login
+        run: |
+          gcloud auth configure-docker
+
+      - name: Build the Image SBOM
+        run: syft packages "${{ inputs.image_ref }}" --output cyclonedx --file sbom.cyclonedx
+
+      - name: Sign
+        run: |
+          cosign sign --key "${{ env.KMS_KEY }}" "${{ inputs.image_ref }}"
+
+      - name: Attach SBOM
+        run: |
+          cosign attach sbom --type cyclonedx --sbom sbom.cyclonedx "${{ inputs.image_ref }}"
+          cosign sign --attachment sbom --key "${{ env.KMS_KEY }}" "${{ inputs.image_ref }}"
+
+      - name: Verify SBOM
+        run: cosign verify --attachment sbom --key "${{ env.KMS_KEY }}" "${{ inputs.image_ref }}"

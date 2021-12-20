@@ -1,0 +1,41 @@
+name: Docker
+
+on:
+  push:
+    branches: [ sbom ]
+
+env:
+  GCP_WORKLOAD_IDENTITY_PROVIDER: 'projects/998629990322/locations/global/workloadIdentityPools/ribbybibby/providers/testy'
+  GCP_SERVICE_ACCOUNT: 'cosigner@jetstack-rob-best.iam.gserviceaccount.com'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v2.4.0
+      - name: Build Docker Image
+        run: make build-image-testy
+      - uses: google-github-actions/auth@v0.4.0
+        with:
+          workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.GCP_SERVICE_ACCOUNT }}
+      - name: Docker Login
+        run: |
+          gcloud auth configure-docker
+      - name: Push image
+        run: make push-image-testy
+      # Pass the image ref to the provenance job
+      - name: Set the output image ref
+        id: output
+        run: make output-image-ref-testy
+    outputs:
+      image_ref: ${{ steps.output.outputs.image_ref }}
+
+  provenance:
+    needs: build
+    uses: ribbybibby/testy/.github/workflows/provenance.yml@sbom
+    with:
+      image_ref: ${{ needs.build.outputs.image_ref }}
+
