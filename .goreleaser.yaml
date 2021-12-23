@@ -13,11 +13,11 @@ builds:
     flags:
       - -v
     ldflags: |
-      -X github.com/prometheus/common/version.Version={{.Env.APP_VERSION}}
+      -X github.com/prometheus/common/version.Version={{.Version}}
       -X github.com/prometheus/common/version.Revision={{.Env.APP_REVISION}}
       -X github.com/prometheus/common/version.Branch={{.Env.APP_BRANCH}}
-      -X github.com/prometheus/common/version.BuildUser={{.Env.APP_USER}}@{{.Env.APP_HOST}}
-      -X github.com/prometheus/common/version.BuildDate={{.Env.APP_BUILD_DATE}}
+      -X github.com/prometheus/common/version.BuildUser=goreleaser
+      -X github.com/prometheus/common/version.BuildDate={{.Date}}
 release:
   github:
     owner: ribbybibby
@@ -25,12 +25,12 @@ release:
 dockers:
 - image_templates:
   - '{{.Env.APP_DOCKER_IMAGE}}:{{ .Tag }}'
-  - '{{.Env.APP_DOCKER_IMAGE}}:{{ .Tag }}'
+  - '{{.Env.APP_DOCKER_IMAGE}}:latest'
   dockerfile: Dockerfile
   build_flag_templates:
   - "--pull"
   - "--label=org.opencontainers.image.created={{.Env.APP_BUILD_DATE}}"
   - "--label=org.opencontainers.image.name={{.ProjectName}}"
   - "--label=org.opencontainers.image.revision={{.Env.APP_REVISION}}"
-  - "--label=org.opencontainers.image.version={{.Env.APP_VERSION}}"
+  - "--label=org.opencontainers.image.version={{.Version}}"
   - "--label=org.opencontainers.image.source={{.GitURL}}"
