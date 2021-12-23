@@ -10,7 +10,6 @@ RACE := $(shell test $$(go env GOARCH) != "amd64" || (echo "-race"))
 
 export APP_HOST              ?= $(shell hostname)
 export APP_BRANCH            ?= $(shell git describe --all --contains --dirty HEAD)
-export APP_VERSION           := $(shell cat VERSION)
 export APP_REVISION          := $(shell git rev-parse HEAD)
 export APP_USER              := $(shell id -u --name)
 export APP_BUILD_DATE        := $(shell date '+%Y%m%d-%H:%M:%S')
@@ -37,7 +36,7 @@ vet:
 build:
 	@echo ">> building binary"
 	@CGO_ENABLED=0 go build -v \
-		-ldflags "-X github.com/prometheus/common/version.Version=$(APP_VERSION) \
+		-ldflags "-X github.com/prometheus/common/version.Version=dev \
 		-X github.com/prometheus/common/version.Revision=$(APP_REVISION) \
 		-X github.com/prometheus/common/version.Branch=$(APP_BRANCH) \
 		-X github.com/prometheus/common/version.BuildUser=$(APP_USER)@$(APP_HOST) \
