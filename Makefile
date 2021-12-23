@@ -1,80 +1,67 @@
-ROOT_DIR:=$(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
+GOPATH      := $(shell go env GOPATH)
 
-GO_VERSION ?= 1.14
-GO := $(or $(shell which go$(GO_VERSION)),$(shell which go))
+BIN_DIR             ?= $(shell pwd)/bin
+BIN_NAME            ?= testy2$(shell go env GOEXE)
+DOCKER_IMAGE_NAME   ?= testy2
+DOCKER_IMAGE_TAG    ?= $(subst /,-,$(shell git rev-parse --abbrev-ref HEAD))
 
-OS := $(shell $(GO) env GOOS)
-ARCH := $(shell $(GO) env GOARCH)
+# Race detector is only supported on amd64.
+RACE := $(shell test $$(go env GOARCH) != "amd64" || (echo "-race"))
 
-BIN?=$(ROOT_DIR)/.bin
+export APP_HOST              ?= $(shell hostname)
+export APP_BRANCH            ?= $(shell git describe --all --contains --dirty HEAD)
+export APP_VERSION           := $(shell cat VERSION)
+export APP_REVISION          := $(shell git rev-parse HEAD)
+export APP_USER              := $(shell id -u --name)
+export APP_BUILD_DATE        := $(shell date '+%Y%m%d-%H:%M:%S')
+export APP_DOCKER_IMAGE_NAME := ghcr.io/ribbybibby/$(DOCKER_IMAGE_NAME)
 
-# Make sure BIN is on the PATH
-export PATH := $(BIN):$(PATH)
+all: clean format vet build test
 
-COSIGN_VERSION := 1.4.1
-COSIGN := $(BIN)/cosign-$(COSIGN_VERSION)
+style:
+	@echo ">> checking code style"
+	@! gofmt -s -d . | grep '^'
 
-GHA_SLSA_VERSION := 0.4.0
-GHA_SLSA := $(BIN)/slsa-provenance-$(GHA_SLSA_VERSION)
+test:
+	@echo ">> running tests"
+	go test -short -v $(RACE) ./...
 
-$(BIN):
-	mkdir -p $(BIN)
+format:
+	@echo ">> formatting code"
+	@go fmt ./...
 
-$(COSIGN): $(BIN)
-	curl -sSL -o $(COSIGN) https://github.com/sigstore/cosign/releases/download/v$(COSIGN_VERSION)/cosign-$(OS)-$(ARCH) && \
-	chmod +x $(COSIGN)
+vet:
+	@echo ">> vetting code"
+	@go vet $(pkgs)
 
-$(GHA_SLSA): $(BIN)
-	mkdir -p $(BIN)/slsa
-	wget -qO - https://github.com/philips-labs/slsa-provenance-action/releases/download/v$(GHA_SLSA_VERSION)/slsa-provenance_$(GHA_SLSA_VERSION)_$(OS)_$(ARCH).tar.gz | tar xvz -C $(BIN)/slsa/
-	mv $(BIN)/slsa/slsa-provenance $(GHA_SLSA)
-	chmod +x $(GHA_SLSA)
+build:
+	@echo ">> building binary"
+	@CGO_ENABLED=0 go build -v \
+		-ldflags "-X github.com/prometheus/common/version.Version=$(APP_VERSION) \
+		-X github.com/prometheus/common/version.Revision=$(APP_REVISION) \
+		-X github.com/prometheus/common/version.Branch=$(APP_BRANCH) \
+		-X github.com/prometheus/common/version.BuildUser=$(APP_USER)@$(APP_HOST) \
+		-X github.com/prometheus/common/version.BuildDate=$(APP_BUILD_DATE)\
+		" \
+		-o $(BIN_NAME) .
 
-IMAGE_DOCKERFILES:=$(wildcard $(ROOT_DIR)/dockerfiles/*.dockerfile)
-IMAGE_TARGETS:= $(patsubst $(ROOT_DIR)/dockerfiles/%.dockerfile,%,$(IMAGE_DOCKERFILES))
+docker:
+	@echo ">> building docker image"
+	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
 
-COMMIT:=$(shell git rev-list -1 HEAD)
-VERSION:=$(COMMIT)
+$(GOPATH)/bin/goreleaser:
+	@curl -sfL https://install.goreleaser.com/github.com/goreleaser/goreleaser.sh | BINDIR=$(GOPATH)/bin sh
 
-REGISTRY:=eu.gcr.io/jetstack-rob-best
+snapshot: $(GOPATH)/bin/goreleaser
+	@echo ">> building snapshot"
+	@$(GOPATH)/bin/goreleaser --snapshot --skip-sign --skip-validate --skip-publish --rm-dist
 
-.SECONDEXPANSION:
-testy.REQUIREMENTS:= 
+release: $(GOPATH)/bin/goreleaser
+	@$(GOPATH)/bin/goreleaser release
 
-SIGN_ALL_IMAGES:= $(addprefix sign-image-,$(IMAGE_TARGETS))
-sign-all-images: $(SIGN_ALL_IMAGES)
-$(SIGN_ALL_IMAGES): sign-image-%: $(COSIGN)
-	@echo "==> Signing $(REGISTRY)/$*:$(VERSION)"
-	$(COSIGN) sign $(REGISTRY)/$*:$(VERSION)
-	$(COSIGN) verify $(REGISTRY)/$*:$(VERSION)
-	@echo "==> Signed and verified $(REGISTRY)/$*:$(VERSION)"
+clean:
+	@echo ">> removing build artifacts"
+	@rm -Rf $(BIN_DIR)
+	@rm -Rf $(BIN_NAME)
 
-BUILD_ALL_IMAGES:= $(addprefix build-image-,$(IMAGE_TARGETS))
-build-all-images: $(BUILD_ALL_IMAGES)
-$(BUILD_ALL_IMAGES): build-image-%: $(ROOT_DIR)/dockerfiles/%.dockerfile $$(%.REQUIREMENTS)
-	@echo "==> Building $(REGISTRY)/$*:$(VERSION)"
-	docker build . --file $< --tag $(REGISTRY)/$*:$(VERSION)
-	@echo "==> Built $(REGISTRY)/$*:$(VERSION) successfully"
-
-PUSH_ALL_IMAGES:= $(addprefix push-image-,$(IMAGE_TARGETS))
-push-all-images: $(PUSH_ALL_IMAGES)
-$(PUSH_ALL_IMAGES): push-image-%:
-	@echo "==> Pushing $(REGISTRY)/$* with tags '$(VERSION)' and 'latest'"
-	docker tag $(REGISTRY)/$*:$(VERSION) $(REGISTRY)/$*:latest
-	docker push $(REGISTRY)/$*:$(VERSION)
-	docker push $(REGISTRY)/$*:latest
-	@echo "==> Pushed $(REGISTRY)/$* with tags '$(VERSION)' and 'latest'"
-
-
-ATTEST_ALL_IMAGES:= $(addprefix attest-image-,$(IMAGE_TARGETS))
-attest-all-images: $(SIGN_ALL_IMAGES)
-$(ATTEST_ALL_IMAGES): attest-image-%: $(COSIGN) $(GHA_SLSA)
-	@echo "==> Attaching Github Actions attestation to $(REGISTRY)/$*:$(VERSION)"
-	$(GHA_SLSA) generate -artifact_path $(GHA_SLSA) -output_path provenance.json -github_context '$(GITHUB_CONTEXT)' -runner_context '$(RUNNER_CONTEXT)'
-	jq '.predicate' provenance.json > predicate.json
-	$(COSIGN) attest --type slsaprovenance --predicate predicate.json $(REGISTRY)/$*:$(VERSION)
-	$(COSIGN) verify-attestation --type slsaprovenance $(REGISTRY)/$*:$(VERSION)
-	@echo "==> Attached Github Actions attestation to $(REGISTRY)/$*:$(VERSION)"
-
-output-image-ref-%:
-	echo "::set-output name=image_ref::$(REGISTRY)/$*:$(VERSION)"
+.PHONY: all style test format vet build docker snapshot release clean
