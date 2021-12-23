@@ -16,16 +16,16 @@ builds:
       -X github.com/prometheus/common/version.Version={{.Version}}
       -X github.com/prometheus/common/version.Revision={{.Env.APP_REVISION}}
       -X github.com/prometheus/common/version.Branch={{.Env.APP_BRANCH}}
-      -X github.com/prometheus/common/version.BuildUser=goreleaser
-      -X github.com/prometheus/common/version.BuildDate={{.Date}}
+      -X github.com/prometheus/common/version.BuildUser={{.Env.APP_USER}}@{{.Env.APP_HOST}}
+      -X github.com/prometheus/common/version.BuildDate={{.Env.APP_BUILD_DATE}}
 release:
   github:
     owner: ribbybibby
     name: testy2
 dockers:
 - image_templates:
-  - '{{.Env.APP_DOCKER_IMAGE}}:{{ .Tag }}'
-  - '{{.Env.APP_DOCKER_IMAGE}}:latest'
+  - '{{.Env.APP_DOCKER_IMAGE_NAME}}:{{ .Tag }}'
+  - '{{.Env.APP_DOCKER_IMAGE_NAME}}:latest'
   dockerfile: Dockerfile
   build_flag_templates:
   - "--pull"
