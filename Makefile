@@ -10,9 +10,7 @@ RACE := $(shell test $$(go env GOARCH) != "amd64" || (echo "-race"))
 
 export APP_HOST              ?= $(shell hostname)
 export APP_BRANCH            ?= $(shell git describe --all --contains --dirty HEAD)
-export APP_REVISION          := $(shell git rev-parse HEAD)
 export APP_USER              := $(shell id -u --name)
-export APP_BUILD_DATE        := $(shell date '+%Y%m%d-%H:%M:%S')
 export APP_DOCKER_IMAGE_NAME := ghcr.io/ribbybibby/$(DOCKER_IMAGE_NAME)
 
 all: clean format vet build test
