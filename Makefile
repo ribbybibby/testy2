@@ -44,7 +44,7 @@ build:
 
 docker:
 	@echo ">> building docker image"
-	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" .
+	@docker build -t "$(DOCKER_IMAGE_NAME):$(DOCKER_IMAGE_TAG)" -f Dockerfile.local .
 
 $(GOPATH)/bin/goreleaser:
 	@go install github.com/goreleaser/goreleaser@v1.2.2

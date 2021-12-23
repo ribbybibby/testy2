@@ -26,7 +26,7 @@ dockers:
 - image_templates:
   - '{{.Env.APP_DOCKER_IMAGE_NAME}}:{{.Version}}'
   - '{{.Env.APP_DOCKER_IMAGE_NAME}}:latest'
-  dockerfile: Dockerfile.goreleaser
+  dockerfile: Dockerfile
   build_flag_templates:
   - "--pull"
   - "--label=org.opencontainers.image.created={{.Date}}"
